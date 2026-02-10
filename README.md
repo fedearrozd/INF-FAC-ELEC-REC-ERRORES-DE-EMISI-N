@@ -14,3 +14,5 @@ que hayan presentado rechazos, indicando en la última columna el motivo del rec
 |FFacErrEmiMin.exe |Genera Informe de facturación electrónica errores de emisión de los documentos electrónicos como facturas, notas y otros que por algún motivo fueron rechazados por la DIAN. En el consolidado indica el motivo del rechazo en las últimas columnas. Diseñado para programación de horas y minutos.|
 |FFacErrEmiDia.exe |Genera Informe de facturación electrónica errores de emisión para programación diaria.|
 |FFacErrEmiSem.exe |Genera Informe de facturación electrónica errores de emisión para programación semanal.|
+
+Ante perdida o reconfiguracion de la base de datos configurar el archivo fconfsql.dbf con las conexiones y credenciales.
