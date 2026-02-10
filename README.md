@@ -11,12 +11,6 @@ que hayan presentado rechazos, indicando en la última columna el motivo del rec
 | :--- | :--- |
 |Ubicación de Fuentes |\\194.168.0.65\bkdesarrollo\FEDEARROZ\Facturación|
 |Ejecutable |Descripción|
-|FFacErrEmiMin.exe ||Genera Informe de facturación electrónica errores de emisión de los
-documentos electrónicos como facturas, notas y otros que por algún motivo
-fueron rechazados por la DIAN. En el consolidado indica el motivo del
-rechazo en las últimas columnas. Diseñado para programación de horas y
-minutos.|
-|FFacErrEmiDia.exe |Genera Informe de facturación electrónica errores de emisión para
-programación diaria.|
-|FFacErrEmiSem.exe |Genera Informe de facturación electrónica errores de emisión para
-programación semanal.|
+|FFacErrEmiMin.exe |Genera Informe de facturación electrónica errores de emisión de los documentos electrónicos como facturas, notas y otros que por algún motivo fueron rechazados por la DIAN. En el consolidado indica el motivo del rechazo en las últimas columnas. Diseñado para programación de horas y minutos.|
+|FFacErrEmiDia.exe |Genera Informe de facturación electrónica errores de emisión para programación diaria.|
+|FFacErrEmiSem.exe |Genera Informe de facturación electrónica errores de emisión para programación semanal.|
