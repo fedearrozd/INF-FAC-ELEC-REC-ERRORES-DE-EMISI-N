@@ -1,0 +1,620 @@
+*************************************************************************************************************
+* PROGRAMA     : FENVFACERREMI.PRG                                     										*
+* FUNCION  	   : EXTRAE INFORMACION DE FACTURACION ELECTRONICA ERRORES DE EMISION                         	*
+* AUTOR        : NUBIA PULIDO COPETE                                    									*
+* FECHA CREADO : DICIEMBRE 4 DE 2024	                                									*
+*************************************************************************************************************
+LPARAMETERS LPcFecIni,LPcFecFin,LPcCond,LPcRango,LApplication
+PUBLIC GlConsolidado,GlInterno,GcCaminoMod,GcGuardaSYS1104,GcGuardaSYS3050,GcProgEmail_Tipo
+LOCAL LnCant, LcPath
+
+**************************************************************************************
+GlConsolidado= .T.	&& Consolidado - Genera información de Oficina Principal
+GlInterno= .F.	&& Automatico - No presenta ventana de interacción de usuario.
+*-GlInterno= .T.		&& Manual - Presenta ventana de interacción de usuario.
+GcProgEmail_Tipo= 'ERREMIDIA'	&& Auditores
+*-GcProgEmail_Tipo= 'ERREMISEM'	&& Revisores
+*-GcProgEmail_Tipo= ''			&& Todos
+**************************************************************************************
+SET FULLPATH ON
+LcModulo= SYS(16,0)
+LnCant= IIF(LApplication,2,1)
+GcCaminoMod= LEFT(SYS(16,0), RAT("\", SYS(16,0), 2))+'FACERREMI\'
+GcCaminoMod= LEFT(GcCaminoMod,RAT('\',GcCaminoMod,LnCant))
+
+*!*	GcCaminoMod= 'U:\ERP\SEVEN\FACTURACION\FACERREMI\'
+*!*	GcCaminoMod= LEFT(GcCaminoMod,RAT('\',GcCaminoMod,LnCant))
+LcRuta= SUBSTR(LcModulo,1,3)+'\MODULOS\SUBPROGR\'
+LcPath= GcCaminoMod+';'+LcRuta
+SET PATH TO
+SET PATH TO &LcPath
+FIniciaG()
+GcPath= GcCaminoMod+';'+LcRuta
+SET PATH TO
+SET PATH TO &GcPath
+SET DEFA TO &GcCaminoMod
+GCamino= GcCaminoMod
+FSet()
+*!* OJO CAMBIAR ANTES DE PONER EN PRODUCCION -
+*-SET ESCAPE ON
+SET STATUS BAR OFF
+ON ERROR DO FAtraErr WITH SYS(16), SYS(2018), MESSAGE(), MESSAGE(1), LINENO(), LINENO(1), ALIAS(), DBF()
+DIMENSION GmTablas[80,5]
+DIMENSION GmTempo[80,2]
+DIMENSION GmIndice[80,2]
+FIndTemp('GInd1')
+FTabTemp('GTPlCorreo',.T.)
+FTabTemp('GTSeccionales',.T.)
+GlExis= FUse('EnvEmail',,,,,GcCaminoMod,,,) AND GlExis
+GlExis= FUse('FeParGer',,,,,GcCaminoMod,,,) AND GlExis
+GlExis= FUse('PlCorreo',,.T.,5,'LlavePrin',GcCaminoMod,.F.,.F.,.T.) AND GlExis
+GlExis= FUse('Usucorre',,,,,GcCaminoMod,,,) AND GlExis
+GlExis= FUse('ReportXP',,,,,GcCaminoMod,,,) AND GlExis
+GlExis= FUse('FConfSQL',,,,,GcCaminoMod,,,) AND GlExis
+GlExis= FUse('Frecuenc',,,,,GcCaminoMod,,,) AND GlExis
+GlExis= FUse('ProgEmail',,,,,GcCaminoMod,,,) AND GlExis
+IF GlExis
+	SELECT FeParGer
+	LcInformes= ALLTRIM(Informes)
+
+	SELECT FConfSQL
+	LcBDGeren= 'GERENCIAL'
+	SET FILTER TO ALLTRIM(Tipo)= 'CONEXINT' AND ALLTRIM(BaseDatos)= LcBDGeren
+	GO TOP
+	LcServiSeven= ALLTRIM(Servidor)
+	FConexion(DRIVER,Servidor,usuario,PASSWORD,BaseDatos)
+ENDIF
+LcPeriodo= ALLTRIM(STR(YEAR(DATE())))+PADL(ALLTRIM(STR(MONTH(DATE()))),2,'0')+PADL(ALLTRIM(STR(DAY(DATE()))),2,'0')+'_'+PADL(ALLTRIM(STR(HOUR(DATETIME()))),2,'0')+PADL(ALLTRIM(STR(MINUTE(DATETIME()))),2,'0')
+LcCarpeta= 'Fac_ErrE_'+LcPeriodo
+LcArb_Nomb= 'Fac_ErrE'
+LcRutaArchivos= GcCaminoMod+LcCarpeta+'\'
+GcDirectorio= LcRutaArchivos
+GcUser= 'AUDITORIA'
+GcArea= 'División Auditoría'
+SET MESSAGE TO 'Seleccione los Filtros del Informe'
+SET NULLDISPLAY TO ''
+
+IF !DIRECTORY(GcDirectorio)
+	MKDIR(GcDirectorio)
+ENDIF
+
+IF GnConnect > 0 AND GlExis
+	*-  Selecciona el rango de fechas del informe
+	LdFechaIni= {^2024/05/01}
+	LdFechaFin= DATE()
+	IF GlInterno
+		IF TYPE('LPcCond')='L'
+			DO FORM RangFech TO cFiltro WITH LdFechaIni,LdFechaFin,'FAC_FECH'
+			IF GlCancelar
+				WAIT WINDOW ('Informe Cancelado') NOWAIT
+				CierraTodo()
+				RETURN
+			ENDIF
+			GdFecIni= cFiltro.Inicio
+			GdFecFin= cFiltro.Fin
+			LcAnno= ALLTRIM(STR(YEAR(GdFecFin)))
+			LcMes= ALLTRIM(STR(MONTH(GdFecFin)))
+			LPcFecIni= STRTRAN(DTOC(cFiltro.Inicio),'/','')
+			LPcFecFin= STRTRAN(DTOC(cFiltro.Fin),'/','')
+			LcFecFin= STRTRAN(DTOC(cFiltro.Fin),'/','-')
+			LPcCond= cFiltro.Condicion
+			LPcRango= cFiltro.Texto
+			LcAno= ALLTRIM(STR(YEAR(cFiltro.Inicio)))
+		ENDIF
+	ELSE
+		GdFecIni= LdFechaIni
+		GdFecFin= LdFechaFin
+		LcAnno= ALLTRIM(STR(YEAR(GdFecFin)))
+		LcMes= ALLTRIM(STR(MONTH(GdFecFin)))
+		LPcFecIni= STRTRAN(DTOC(LdFechaIni),'/','')
+		LPcFecFin= STRTRAN(DTOC(LdFechaFin),'/','')
+		LcFecFin= STRTRAN(DTOC(LdFechaFin),'/','-')
+		LPcCond= 'BETWEEN(FAC_FECH,{'+DTOC(LdFechaIni)+'},{'+DTOC(LdFechaFin)+'}'
+		LPcRango= '[Desde '+DTOC(LdFechaIni)+' - Hasta '+DTOC(LdFechaFin)+']'
+		LcAno= ALLTRIM(STR(YEAR(LdFechaIni)))
+	ENDIF
+
+	IF GlExis
+		*- Pone en uso la BD de GERENCIAL
+		***********************************
+		LcSQL= "USE "+LcBDGeren
+		LnSQLEXEC= SQLEXEC(GnConnect,LcSQL)
+		IF LnSQLEXEC > 0
+			GlExis= .T. AND GlExis
+		ELSE
+			=AERROR(LmAError)
+			MESSAGEBOX('¡¡ ERROR EN LA BASE DE DATOS !!'+CHR(13)+CHR(13) ;
+				+"¡ No fue posible poner en uso la Base de Datos ! "+CHR(13)+CHR(13) ;
+				+"¡ Pregunte al responsable del sistema. ! "+CHR(13)+CHR(13) ;
+				+"Mensaje de Error: "+CHR(13)+LmAError[2],0+16+0,GcMensa)
+			GlExis= .F. AND GlExis
+		ENDIF
+
+
+		*- Cargue datos desde GERENCIAL
+		*************************************************
+		WAIT WINDOW 'Procesando: Usuarios ' NOWAIT
+		LcSQL1= "[dbo].[Eje_Fac_EnvCorr] '"+STRTRAN(DTOC(GdFecIni),'/','-')+"', '"+STRTRAN(DTOC(GdFecFin),'/','-')+"'"
+		LnSQLEXEC= SQLEXEC(GnConnect,LcSQL1,"SQL_Usuarios")
+		IF LnSQLEXEC <= 0
+			MESSAGEBOX('¡ No fue posible obtener los datos para...! ' ;
+				+CHR(13)+CHR(13)+"««« [ SQL_Usuarios ]  »»»",0+16+0,GcMensa)
+			GlExis= .F. AND GlExis
+		ELSE
+			GlExis= .T. AND GlExis
+		ENDIF
+
+		IF GlExis
+			WAIT WINDOW ' Seleccionando Datos.... ' NOWAIT
+			LcSQL1= "SELECT * FROM [dbo].[F_FED_FAFACELECERREMI] ('"+STRTRAN(DTOC(GdFecIni),'/','-')+"', '"+STRTRAN(DTOC(GdFecFin),'/','-')+"')"
+			LnSQLEXEC= SQLEXEC(GnConnect,LcSQL1,"SQL_ERREMI")
+			IF LnSQLEXEC <= 0
+				MESSAGEBOX('¡ No fue posible obtener los datos para...! ' ;
+					+CHR(13)+CHR(13)+"««« [ SQL_ERREMI ]  »»»",0+16+0,GcMensa)
+				GlExis= .F. AND GlExis
+			ELSE
+				GlExis= .T. AND GlExis
+			ENDIF
+
+			GnDisConnect= SQLDISCONNECT(GnConnect)
+			RELEASE LnSQLEXEC,GnConnect,GnDisConnect
+			GcGuardaSYS1104= SYS(1104)
+			GcGuardaSYS3050= SYS(3050,1)
+			GcGuardaSYS3050= SYS(3050,2)
+			_SCREEN.VISIBLE = _SCREEN.VISIBLE
+
+
+			**********************************************************
+			*-  GENERA EXCEL DE DIRECTORES
+			**********************************************************
+			WAIT WINDOW ' ¡Generando Archivo en Excel de Directores!.... ' NOWAIT
+			SELECT 'ERREMIDIR' AS Tipo,Cod_Secc AS NIT,Arb_Nomb AS Nombre,Email AS Destinatar,.T. AS Enviado,Cod_Secc AS Arb_Codi ;
+				FROM SQL_Usuarios ;
+				INTO CURSOR cUsuarios
+			IF _TALLY> 0
+				SET STATUS BAR OFF
+
+				SELECT cUsuarios
+				GO TOP
+				DO WHILE !EOF()
+					LcArb_Codi= ALLTRIM(Arb_Codi)
+					LcArb_Nomb= 'Fac_ErrE_'+LcArb_Codi
+					LnReg= RECNO()
+
+					SELECT * FROM SQL_ERREMI WHERE Arb_Codi= LcArb_Codi INTO CURSOR cErrEmi ;
+
+					SELECT cErrEmi
+					COUNT TO LnContador
+					IF LnContador= 0
+						WAIT WINDOW '¡No existen datos para Imprimir!.... ' TIMEOUT 10 NOWAIT
+					ELSE
+						WAIT WINDOW ' ¡Generando Archivo en Excel: '+UPPER(LcArb_Nomb)+' !.... ' NOWAIT
+						FVersExc()
+						IF GnVersExc< 12
+							LnMaxLinExc= 65500
+							LcExtension= '.xls'
+						ELSE
+							LnMaxLinExc= 1040000
+							LcExtension= '.xlsx'
+						ENDIF
+
+						IF LnContador< LnMaxLinExc
+							SELECT ReportXp
+							SET FILTER TO ALLTRIM(NomReporte)= 'CERREMI'
+							GO TOP
+
+							LcNombreAr= LcArb_Nomb+'_'+LPcFecIni+'_'+LPcFecFin
+							LcNombreXls= (GcDirectorio+LcNombreAr)+LcExtension
+							LcEncabeza= 'FEDEARROZ,Facturación Electrónica Errores Emisión,Corte:  '+LPcRango+',Fecha y Hora de Generación:  [ '+LcPeriodo+' ]'
+							LcNomHoja= 'Error_Emision'
+							LcMemos= 'ERROR'
+							FExpoXls('CERREMI',LcNombreAr,,,,,LcNomHoja,,,,,,,,,2,LcEncabeza,.T.,.T.,,LcMemos,'FAgreDat',,.T.,)
+							RELEASE oObjeto
+							WAIT WINDOW ('Archivo de Excel guardado como '+LcNombreXls+'.   Presione una tecla.') TIMEOUT 10 NOWAIT
+						ELSE
+							WAIT WINDOW ('El Archivo tiene más de '+ALLTRIM(STR(LnMaxLinExc))+' registros no podrá generarse a Excel.') TIMEOUT 10 NOWAIT
+						ENDIF
+					ENDIF
+					GcGuardaSYS1104= SYS(1104)
+					GcGuardaSYS3050= SYS(3050,1)
+					GcGuardaSYS3050= SYS(3050,2)
+					_SCREEN.VISIBLE = _SCREEN.VISIBLE
+					USE IN SELECT('CERREMI')
+					ERASE ('CERREMI.*')
+					ERASE (GcDirectorio)+(LcArb_Nomb+'_'+LPcFecIni+'_'+LPcFecFin)+'.FPT')
+					SELECT cUsuarios
+					GO LnReg
+					IF !EOF()
+						SKIP
+					ENDIF
+				ENDDO
+			ENDIF
+
+			SELECT cUsuarios
+			SET FILTER TO
+
+			LcArb_Nomb= 'Fac_ErrE'
+			WAIT WINDOW ' ¡Generando Archivo en Excel de Oficina Principal!.... ' NOWAIT
+			SELECT SQL_ERREMI
+			COUNT TO LnContador
+			IF LnContador= 0
+				WAIT WINDOW '¡No existen datos para Imprimir!.... ' TIMEOUT 10 NOWAIT
+			ELSE
+				WAIT WINDOW ' ¡Generando Archivo en Excel: '+UPPER(LcArb_Nomb)+' !.... ' NOWAIT
+				FVersExc()
+				IF GnVersExc< 12
+					LnMaxLinExc= 65500
+					LcExtension= '.xls'
+				ELSE
+					LnMaxLinExc= 1040000
+					LcExtension= '.xlsx'
+				ENDIF
+
+				IF LnContador< LnMaxLinExc
+					SELECT ReportXp
+					SET FILTER TO ALLTRIM(NomReporte)= 'SQL_ERREMI'
+					GO TOP
+
+					LcNombreAr= LcArb_Nomb+'_'+LPcFecIni+'_'+LPcFecFin
+					LcNombreXls= (GcDirectorio+LcNombreAr)+LcExtension
+					LcEncabeza= 'FEDEARROZ,Facturación Electrónica Errores Emisión,Corte:  '+LPcRango+',Fecha y Hora de Generación:  [ '+LcPeriodo+' ]'
+					LcNomHoja= 'Error_Emision'
+					LcMemos= 'ERROR'
+					FExpoXls('SQL_ERREMI',LcNombreAr,,,,,LcNomHoja,,,,,,,,,2,LcEncabeza,.T.,.T.,,LcMemos,'FAgreDatC',3,.T.,)
+					RELEASE oObjeto
+					WAIT WINDOW ('Archivo de Excel guardado como '+LcNombreXls+'.   Presione una tecla.') TIMEOUT 10 NOWAIT
+				ELSE
+					WAIT WINDOW ('El Archivo tiene más de '+ALLTRIM(STR(LnMaxLinExc))+' registros no podrá generarse a Excel.') TIMEOUT 10 NOWAIT
+				ENDIF
+			ENDIF
+			GcGuardaSYS1104= SYS(1104)
+			GcGuardaSYS3050= SYS(3050,1)
+			GcGuardaSYS3050= SYS(3050,2)
+			_SCREEN.VISIBLE = _SCREEN.VISIBLE
+			USE IN SELECT('SQL_ERREMI')
+			ERASE ('SQL_ERREMI.*')
+
+			SELECT cUsuarios
+			SET FILTER TO
+
+
+			********************************************
+			*-  GENERA LOS CORREOS DE LOS DIRECTORES
+			********************************************
+			SELECT 'ERREMIDIR' AS Tipo,Cod_Secc AS NIT,Arb_Nomb AS Nombre,Email AS Destinatar,.T. AS Enviado,Cod_Secc AS Arb_Codi ;
+				FROM SQL_Usuarios ;
+				INTO CURSOR cUsuarios
+			IF _TALLY> 0
+				SELECT PlCorreo
+				AFIELDS(LmStruct)
+				CREATE TABLE (GcCaminoMod+GTPlCorreo) FROM ARRAY LmStruct
+				USE IN SELECT(GTPlCorreo)
+				GlExis= FUse(GTPlCorreo,'GTPlCorreo',,,,,,,.T.) AND GlExis
+
+				*- Inicio de Temporal para el envio de correos.
+				SELECT GTPlCorreo
+				INDEX ON ALLTRIM(NIT) TAG NIT OF &GTPlCorreo
+				INDEX ON ALLTRIM(Nombre) TAG Nombre OF &GTPlCorreo
+				INDEX ON Enviado TAG Enviado OF &GTPlCorreo
+				SET ORDER TO Nombre
+				GcOrdenGTPlCorreo= UPPER(ALLTRIM(TAG()))
+				GO TOP
+				*- Fin de creación de Temporal de correos
+
+				SELECT EnvEmail
+				GO TOP
+				LOCATE FOR ALLTRIM(Tipo)= 'ERREMIDIR'
+				IF FOUND()
+					LcAsunto= ALLTRIM(Asunto)
+
+					SELECT cUsuarios
+					COUNT TO LnCntCorreos
+					IF LnCntCorreos> 0
+						GO TOP
+						DO WHILE !EOF()
+							LcDestinatar= ALLTRIM(Destinatar)
+							LcNit= ALLTRIM(NIT)
+							LcNombre= UPPER(ALLTRIM(Nombre))
+							LcArb_Codi= ALLTRIM(Arb_Codi)
+							LcArb_Nomb= 'Fac_ErrE_'+LcArb_Codi
+							LcNombreAr= LcArb_Nomb+'_'+LPcFecIni+'_'+LPcFecFin
+							GcUser= 'FINANCIERA'
+							GcArea= 'SUBGERENCIA FINANCIERA'
+							LlEnviado= .F.
+							LnReg= RECNO()
+
+							SELECT GTPlCorreo
+							APPEND BLANK
+							REPLACE NIT			WITH LcNit
+							REPLACE Nombre		WITH LcNombre
+							REPLACE Tipo		WITH 'ERREMIDIR'
+							REPLACE Adjuntos	WITH (LcNombreAr)+(LcExtension)
+							REPLACE Destinatar	WITH LcDestinatar
+							REPLACE FecIng		WITH DATE()
+							REPLACE PasswordIn 	WITH GcUser
+							*!*								REPLACE Mensaje		WITH 'Destinatario: '+LcDestinatar+CHR(13)+ALLTRIM(EnvEmail.Mensaje)
+							REPLACE Mensaje		WITH ALLTRIM(EnvEmail.Mensaje)
+							REPLACE Mensaje		WITH STRTRAN(Mensaje,'%PcArea',ALLTRIM(GcArea))
+							REPLACE Mensaje		WITH STRTRAN(Mensaje,'%PcNombre',PROPER(ALLTRIM(LcNombre)))
+							REPLACE Mensaje		WITH STRTRAN(Mensaje,'%PdFecCorte'," "+ALLTRIM(STR(DAY(LdFechaIni)))+" de "+PROPER(FMesesT(LdFechaIni))+" de "+ALLTRIM(STR(YEAR(LdFechaIni)))+" hasta "+ALLTRIM(STR(DAY(LdFechaFin)))+" de "+PROPER(FMesesT(LdFechaFin))+" de "+ALLTRIM(STR(YEAR(LdFechaFin))))+"."
+							REPLACE Enviado		WITH LlEnviado
+
+							SELECT cUsuarios
+							GO LnReg
+							IF !EOF()
+								SKIP
+							ENDIF
+						ENDDO
+					ENDIF
+
+					GlCancelar= .F.
+					LlFExpoMailW= .F.
+					SELECT GTPlCorreo
+					IF GlInterno AND LnCntCorreos> 0
+						DO FORM ModeMail
+					ENDIF
+
+					IF !GlCancelar AND LnCntCorreos> 0
+						LcCorreo= ''
+						LcCod_Acceso= ''
+						LnPuerto= 0
+						SELECT GTPlCorreo
+						SET FILTER TO !Enviado
+						COUNT FOR !Enviado TO LnCntEnvia
+						GO TOP
+						IF LnCntEnvia > 0
+							SELECT EnvEmail
+							GO TOP
+							LOCATE FOR ALLTRIM(Tipo)= 'ERREMIDIR'
+							IF FOUND()
+								LcAsunto= ALLTRIM(Asunto)
+								LcCorreo= ALLTRIM(Correo)
+								LcCod_Acceso= ALLTRIM(Cod_Acceso)
+								LnPuerto= Puerto
+							ELSE
+								LcAsunto= "'Informe de Facturación Electrónica Errores Emisión'"
+							ENDIF
+
+							SELECT GTPlCorreo
+							GO TOP
+							DO WHILE !EOF()
+								SCATTER MEMVAR
+								LnRecno= RECNO()
+								LcPerfil= ""
+								LcPassword= ""
+								FExpoMailW('GTPlCorreo',LcCorreo,LcCod_Acceso,LcAsunto,GcDirectorio,LnPuerto)
+								SELECT GTPlCorreo
+								IF (RECNO()!=LnRecno)
+									GO LnRecno
+								ENDIF
+								REPLACE Enviado WITH .T.
+								IF !EOF()
+									SKIP
+								ENDIF
+							ENDDO
+						ENDIF
+
+						SELECT GTPlCorreo
+						GO TOP
+						DO WHILE !EOF()
+							LnRecGTPlCorreo= RECNO()
+							SCATTER MEMVAR MEMO
+							m.FecIng= DATE()
+							m.PasswordIn= GcUser
+
+							INSERT INTO PlCorreo FROM MEMVAR
+							SELECT PlCorreo
+							=TABLEUPDATE(.T.)
+
+							SELECT GTPlCorreo
+							IF RECNO()!= LnRecGTPlCorreo
+								GO LnRecGTPlCorreo
+							ENDIF
+							IF !EOF()
+								SKIP
+							ENDIF
+						ENDDO
+					ENDIF
+
+					USE IN SELECT('GTPlCorreo')
+					ERASE 'GTPlCorreo.*'
+				ELSE
+					MESSAGEBOX(' ¡No está parametrizado el Tipo ERREMIDIR en la tabla de EnvMail. ' +CHR(13)+ ;
+						'Informe a Sistemas para su creación.',0+16+0,GcMensa)
+				ENDIF
+			ENDIF
+
+			SELECT cUsuarios
+			SET FILTER TO
+
+			**********************************************
+			*-  GENERA LOS CORREOS DE OFICINA PRINCIPAL
+			**********************************************
+			IF !EMPTY(GcProgEmail_Tipo)
+				SELECT * ;
+					FROM UsuCorre ;
+					WHERE Enviado AND ALLTRIM(Tipo)= (GcProgEmail_Tipo) ;
+					INTO CURSOR cUsuCorre
+			ELSE
+				SELECT * ;
+					FROM UsuCorre ;
+					WHERE Enviado ;
+					INTO CURSOR cUsuCorre
+			ENDIF
+			IF _TALLY>0
+
+				SELECT PlCorreo
+				AFIELDS(LmStruct)
+				CREATE TABLE (GcCaminoMod+GTPlCorreo) FROM ARRAY LmStruct
+				USE IN SELECT(GTPlCorreo)
+				GlExis= FUse(GTPlCorreo,'GTPlCorreo',,,,,,,.T.) AND GlExis
+
+				*- Inicio de Temporal para el envio de correos.
+				SELECT GTPlCorreo
+				INDEX ON ALLTRIM(NIT) TAG NIT OF &GTPlCorreo
+				INDEX ON ALLTRIM(Nombre) TAG Nombre OF &GTPlCorreo
+				INDEX ON Enviado TAG Enviado OF &GTPlCorreo
+				SET ORDER TO Nombre
+				GcOrdenGTPlCorreo= UPPER(ALLTRIM(TAG()))
+				GO TOP
+				*- Fin de creación de Temporal de correos
+
+				LcArb_Nomb= 'Fac_ErrE'
+				LcNombreAr= LcArb_Nomb+'_'+LPcFecIni+'_'+LPcFecFin
+				SELECT EnvEmail
+				GO TOP
+				LOCATE FOR ALLTRIM(Tipo)= 'ERREMIOFI'
+				IF FOUND()
+					LcAsunto= ALLTRIM(Asunto)
+
+					SELECT cUsuCorre
+					COUNT TO LnCntCorreos
+					GO TOP
+					IF LnCntCorreos> 0
+						DO WHILE !EOF()
+							LcDestinatar= ALLTRIM(Destinatar)
+							LcNit= ALLTRIM(NIT)
+							LcNombre= UPPER(ALLTRIM(Nombre))
+							GcUser= 'FINANCIERA'
+							GcArea= 'SUBGERENCIA FINANCIERA'
+							LlEnviado= Enviado
+							LnReg= RECNO()
+
+							SELECT GTPlCorreo
+							APPEND BLANK
+							REPLACE NIT			WITH LcNit
+							REPLACE Nombre		WITH LcNombre
+							REPLACE Tipo		WITH 'ERREMIOFI'
+							REPLACE Adjuntos	WITH (LcNombreAr)+(LcExtension)
+							REPLACE Destinatar	WITH LcDestinatar
+							REPLACE FecIng		WITH DATE()
+							REPLACE PasswordIn 	WITH GcUser
+							*!*								REPLACE Mensaje		WITH 'Destinatario: '+LcDestinatar+CHR(13)+ALLTRIM(EnvEmail.Mensaje)
+							REPLACE Mensaje		WITH ALLTRIM(EnvEmail.Mensaje)
+							REPLACE Mensaje		WITH STRTRAN(Mensaje,'%PcArea',ALLTRIM(GcArea))
+							REPLACE Mensaje		WITH STRTRAN(Mensaje,'%PcNombre',PROPER(ALLTRIM(LcNombre)))
+							REPLACE Mensaje		WITH STRTRAN(Mensaje,'%PdFecCorte'," "+ALLTRIM(STR(DAY(LdFechaIni)))+" de "+PROPER(FMesesT(LdFechaIni))+" de "+ALLTRIM(STR(YEAR(LdFechaIni)))+" hasta "+ALLTRIM(STR(DAY(LdFechaFin)))+" de "+PROPER(FMesesT(LdFechaFin))+" de "+ALLTRIM(STR(YEAR(LdFechaFin))))+"."
+							REPLACE Enviado		WITH LlEnviado
+
+							SELECT cUsuCorre
+							GO LnReg
+							IF !EOF()
+								SKIP
+							ENDIF
+						ENDDO
+					ENDIF
+
+					GlCancelar= .F.
+					LlFExpoMailW= .F.
+					SELECT GTPlCorreo
+					IF GlInterno AND LnCntCorreos> 0
+						DO FORM ModeMail
+					ENDIF
+
+					IF !GlCancelar AND LnCntCorreos> 0
+						LcCorreo= ''
+						LcCod_Acceso= ''
+						LnPuerto= 0
+						SELECT GTPlCorreo
+						SET FILTER TO Enviado
+						COUNT FOR Enviado TO LnCntEnvia
+						GO TOP
+						IF LnCntEnvia > 0
+							SELECT EnvEmail
+							GO TOP
+							LOCATE FOR ALLTRIM(Tipo)= 'ERREMIOFI'
+							IF FOUND()
+								LcAsunto= ALLTRIM(Asunto)
+								LcCorreo= ALLTRIM(Correo)
+								LcCod_Acceso= ALLTRIM(Cod_Acceso)
+								LnPuerto= Puerto
+							ELSE
+								LcAsunto= "'Informe de Facturación Electrónica Errores Emisión'"
+							ENDIF
+
+							SELECT GTPlCorreo
+							GO TOP
+							DO WHILE !EOF()
+								SCATTER MEMVAR
+								LnRecno= RECNO()
+								LcPerfil= ""
+								LcPassword= ""
+								FExpoMailW('GTPlCorreo',LcCorreo,LcCod_Acceso,LcAsunto,GcDirectorio,LnPuerto)
+								SELECT GTPlCorreo
+								IF (RECNO()!=LnRecno)
+									GO LnRecno
+								ENDIF
+								REPLACE Enviado WITH .T.
+								IF !EOF()
+									SKIP
+								ENDIF
+							ENDDO
+						ENDIF
+
+						SELECT GTPlCorreo
+						GO TOP
+						DO WHILE !EOF()
+							LnRecGTPlCorreo= RECNO()
+							SCATTER MEMVAR MEMO
+							m.FecIng= DATE()
+							m.PasswordIn= GcUser
+
+							INSERT INTO PlCorreo FROM MEMVAR
+							SELECT PlCorreo
+							=TABLEUPDATE(.T.)
+
+							SELECT GTPlCorreo
+							IF RECNO()!= LnRecGTPlCorreo
+								GO LnRecGTPlCorreo
+							ENDIF
+							IF !EOF()
+								SKIP
+							ENDIF
+						ENDDO
+
+					ENDIF
+
+					USE IN SELECT('GTPlCorreo')
+					ERASE 'GTPlCorreo.*'
+				ELSE
+					MESSAGEBOX(' ¡No está parametrizado el Tipo ERREMIOFI en la tabla de EnvMail. ' +CHR(13)+ ;
+						'Informe a Sistemas para su creación.',0+16+0,GcMensa)
+				ENDIF
+			ENDIF
+			SELECT cUsuCorre
+			SET FILTER TO
+
+			WAIT WINDOW 'Fin del Informe' NOWAIT
+
+		ENDIF
+	ENDIF
+ELSE
+	=AERROR(LmAError)
+	MESSAGEBOX('¡¡ ERROR DE CONEXION !!'+CHR(13)+CHR(13) ;
+		+"¡ No fue posible hacer la conexión con el servidor ! "+CHR(13)+CHR(13) ;
+		+"¡ Pregunte al responsable del sistema. ! "+CHR(13)+CHR(13) ;
+		+"Mensaje de Error: "+CHR(13)+LmAError[2],0+16+0,GcMensa)
+	GlExis= .F. AND GlExis
+ENDIF
+CierraTodo()
+RETURN
+
+PROCEDURE CierraTodo
+	USE IN SELECT('SQL_Usuarios')
+	ERASE ('SQL_Usuarios')+'.*'
+	USE IN SELECT('SQL_Seccionales')
+	ERASE ('SQL_Seccionales')+'.*'
+	USE IN SELECT('SQL_ERREMI')
+	ERASE ('SQL_ERREMI')+'.*'
+	USE IN SELECT('cPlCorreo')
+	USE IN SELECT('cUsuarios')
+	USE IN SELECT('cUsuCorre')
+	USE IN SELECT('cSeccionales')
+	FCierra()
+	FCierraT()
+	FBorrInd()
+	FUnSet()
+	FLimpiaG()
+	RELEASE GlConsolidado,GlInterno,GcCaminoMod,GcGuardaSYS1104,GcGuardaSYS3050,GcProgEmail_Tipo
+ENDPROC
+
