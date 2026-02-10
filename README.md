@@ -8,6 +8,7 @@ rechazos. Envía además a algunos usuarios de oficina principal el consolidado 
 que hayan presentado rechazos, indicando en la última columna el motivo del rechazo.
 
 |Áreas Beneficiadas| Sistemas.|
+| :--- | :--- |
 |Ubicación de Fuentes |\\194.168.0.65\bkdesarrollo\FEDEARROZ\Facturación|
 |Ejecutable |Descripción|
 |FFacErrEmiMin.exe ||Genera Informe de facturación electrónica errores de emisión de los
